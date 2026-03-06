@@ -1,0 +1,7 @@
+ollama
+sqlite-vec
+customtkinter
+httpx
+pydantic
+pyyaml
+pdfplumber
