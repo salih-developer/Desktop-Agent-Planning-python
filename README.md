@@ -1,57 +1,57 @@
 # Desktop Agent
 
-Yerel olarak çalışan, Ollama tabanlı bir masaüstü AI asistanı. Dosya okuma/yazma, web arama, komut çalıştırma ve uzun süreli hafıza özellikleriyle donatılmış, araç çağrısı yapabilen bir ReAct döngüsü üzerine inşa edilmiştir.
+A locally-running, Ollama-powered desktop AI assistant. Built on a ReAct loop with native tool calling, supporting file operations, web search, shell execution, and persistent semantic memory.
 
 ---
 
-## Özellikler
+## Features
 
-### ReAct Döngüsü
-- **Gözlemle → Düşün → Davran** döngüsüyle adım adım görev çözer
-- Ollama native tool calling desteği
-- Text-format tool call fallback: `<function=...>` biçiminde yanıt üreten modeller de çalışır
-- Configurable maksimum iterasyon sayısı (varsayılan: 15)
-- Her oturum için `logs/` klasörüne detaylı `.log` trace dosyası kaydeder
+### ReAct Loop
+- **Observe → Think → Act** loop for step-by-step task solving
+- Ollama native tool calling support
+- Text-format tool call fallback: models that emit `<function=...>` syntax instead of native calls are handled automatically
+- Configurable maximum iteration count (default: 15)
+- Detailed `.log` trace file written to `logs/` for every session
 
-### Araçlar (Tools)
-| Araç | Açıklama |
-|------|----------|
-| `file_read` | Dosya okur; büyük dosyalar için satır aralığı desteği |
-| `file_write` | Yeni dosya oluşturur veya üzerine yazar |
-| `file_edit` | Dosyada belirli metin bloğunu yerinde değiştirir |
-| `shell_run` | Windows cmd.exe komutu çalıştırır; timeout desteği |
-| `web_search` | DuckDuckGo üzerinden web araması yapar |
-| `web_fetch` | URL içeriğini çeker (HTML → metin dönüşümü) |
-| `dir_tree` | Dizin ağacı çıktısı verir |
-| `find_files` | Glob pattern ile dosya arar |
+### Tools
+| Tool | Description |
+|------|-------------|
+| `file_read` | Reads files; supports line range for large files |
+| `file_write` | Creates or overwrites a file |
+| `file_edit` | In-place text block replacement within a file |
+| `shell_run` | Runs Windows cmd.exe commands with timeout support |
+| `web_search` | Web search via DuckDuckGo |
+| `web_fetch` | Fetches URL content (HTML → plain text) |
+| `dir_tree` | Outputs a directory tree |
+| `find_files` | Searches for files by glob pattern |
 
-### Semantik Hafıza
-- Her konuşma `sqlite-vec` vektör veritabanında saklanır
-- `nomic-embed-text` modeli ile 768-boyutlu embedding üretilir
-- Yeni sorguda en ilgili geçmiş etkileşimler KNN ile bulunur ve bağlam olarak eklenir
-- Hafıza veritabanı: `~/.desktop_agent/memory.db`
+### Semantic Memory
+- Every conversation is stored in a `sqlite-vec` vector database
+- 768-dimensional embeddings via `nomic-embed-text`
+- On each new query, the most relevant past interactions are retrieved via KNN and injected as context
+- Memory database: `~/.desktop_agent/memory.db`
 
-### Güvenlik
-- **Prompt Injection Koruması**: Araç çıktılarında gömülü talimat kalıpları tespit edilir (`ignore previous`, `act as`, `you are` vb.) — `[⚠ INJECTION WARNING]` ile işaretlenir ve LLM uyarılır
-- UI'da enjeksiyon uyarıları turuncu renkte vurgulanır
-- **Engellenen komutlar**: `rm -rf /`, `format`, `dd if=` gibi yıkıcı komutlar çalıştırılmaz
-- `prompt_injection_protection` config ile açılıp kapatılabilir
+### Security
+- **Prompt Injection Protection**: Detects embedded instruction patterns in tool output (`ignore previous`, `act as`, `you are`, etc.) — flags them with `[⚠ INJECTION WARNING]` and alerts the LLM
+- Injection warnings are highlighted in orange in the UI
+- **Blocked commands**: Destructive commands such as `rm -rf /`, `format`, `dd if=` are blocked from execution
+- `prompt_injection_protection` can be toggled in settings
 
-### Dosya ve Görsel Eki
-- Sohbet kutusuna **dosya** ve **klasör** eklenebilir (📎 butonu)
-- PNG, JPG, PDF, TXT, MD, CS, SQL, JSON, YAML gibi formatlar desteklenir
-- Ekler agent'a bağlam olarak aktarılır
+### File & Image Attachments
+- Files and folders can be attached to the chat (📎 button)
+- Supported formats: PNG, JPG, PDF, TXT, MD, CS, SQL, JSON, YAML, and more
+- Attachments are passed as context to the agent
 
-### Arayüz (UI)
-- **CustomTkinter** tabanlı masaüstü uygulaması
-- Araç çağrıları sohbet akışı içinde inline olarak gösterilir (`⚙ araç çağrıları` bloğu)
-- Kullanıcı mesajı → araç çağrıları → agent yanıtı sırayla akar
-- Görev takip paneli: her adımın durumu ve geçen süre
-- **Stop** butonu ile çalışan agent iptal edilebilir
-- Ayarlar iletişim kutusu: model, workspace, timeout, iterasyon limiti, hafıza boyutu ve güvenlik ayarları
+### UI
+- Desktop application built with **CustomTkinter**
+- Tool calls are shown inline within the chat stream (`⚙ tool calls` block)
+- Flow reads top-to-bottom: user message → tool calls → agent answer
+- Task tracker panel: status and elapsed time for each step
+- **Stop** button to cancel a running agent mid-execution
+- Settings dialog: model, workspace, timeout, iteration limit, memory size, and security options
 
-### Yapılandırma
-Ayarlar `~/.desktop_agent/config.yaml` dosyasında saklanır:
+### Configuration
+Settings are stored in `~/.desktop_agent/config.yaml`:
 
 ```yaml
 ollama_base_url: http://localhost:11434
@@ -69,7 +69,7 @@ shell_timeout_seconds: 30
 
 ---
 
-## Kurulum
+## Getting Started
 
 ```bash
 pip install -r requirements.txt
@@ -78,41 +78,41 @@ ollama pull qwen2.5:7b
 python main.py
 ```
 
-> Ollama'nın `http://localhost:11434` adresinde çalışıyor olması gerekir.
+> Ollama must be running at `http://localhost:11434`.
 
 ---
 
-## Proje Yapısı
+## Project Structure
 
 ```
 DesktopAgentPlanning/
-├── main.py                  # Giriş noktası
-├── config.py                # AppConfig dataclass + YAML yükleme
-├── logger.py                # Loglama
+├── main.py                  # Entry point
+├── config.py                # AppConfig dataclass + YAML loading
+├── logger.py                # Logging setup
 ├── core/
-│   ├── agent.py             # Orkestratör
-│   ├── react_loop.py        # ReAct döngüsü
-│   ├── react_tracer.py      # Oturum trace yazıcısı
-│   ├── planner.py           # Görev planlayıcı (Pydantic)
-│   ├── executor.py          # Paralel görev çalıştırıcı
-│   └── synthesizer.py       # Streaming final yanıt
+│   ├── agent.py             # Orchestrator
+│   ├── react_loop.py        # ReAct loop engine
+│   ├── react_tracer.py      # Session trace writer
+│   ├── planner.py           # Task planner (Pydantic)
+│   ├── executor.py          # Parallel task runner
+│   └── synthesizer.py       # Streaming final answer
 ├── memory/
-│   ├── store.py             # sqlite-vec vektör deposu
-│   └── embedder.py          # Ollama embedding istemcisi
+│   ├── store.py             # sqlite-vec vector store
+│   └── embedder.py          # Ollama embedding client
 ├── tools/
-│   ├── registry.py          # Araç kaydı ve fabrika
+│   ├── registry.py          # Tool registry and factory
 │   ├── file_tools.py        # file_read / file_write / file_edit
 │   ├── shell_tool.py        # shell_run
 │   ├── web_tools.py         # web_search / web_fetch
 │   └── filesystem_tool.py   # dir_tree / find_files
 ├── ui/
-│   ├── app.py               # CTk root, threading köprüsü, SettingsDialog
+│   ├── app.py               # CTk root, threading bridge, SettingsDialog
 │   └── panels/
-│       ├── chat_panel.py    # Sohbet + ek yönetimi
-│       └── task_panel.py    # Görev durum listesi
+│       ├── chat_panel.py    # Chat view + attachment management
+│       └── task_panel.py    # Task status list
 │   └── widgets/
 │       ├── message_bubble.py
 │       ├── task_item.py
 │       └── tool_output_block.py
-└── logs/                    # Oturum trace dosyaları (.log)
+└── logs/                    # Session trace files (.log)
 ```
