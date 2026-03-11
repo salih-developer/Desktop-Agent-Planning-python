@@ -56,7 +56,12 @@ class MemoryStore:
         metadata_json = json.dumps(metadata or {})
 
         combined = f"{user_input} {assistant_output}"
-        embedding = self._embedder.embed(combined)  # slow HTTP — outside lock
+        try:
+            embedding = self._embedder.embed(combined)  # slow HTTP — outside lock
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Memory store skipped (embedding failed): %s", e)
+            return -1
         embedding_bytes = json.dumps(embedding)
 
         with self._lock:
@@ -74,7 +79,12 @@ class MemoryStore:
         return row_id
 
     def search(self, query: str, top_k: int = 5) -> list[MemoryResult]:
-        embedding = self._embedder.embed(query)  # slow HTTP — outside lock
+        try:
+            embedding = self._embedder.embed(query)  # slow HTTP — outside lock
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Memory search skipped (embedding failed): %s", e)
+            return []
         embedding_bytes = json.dumps(embedding)
 
         with self._lock:

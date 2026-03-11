@@ -12,7 +12,6 @@ from core.agent import Agent
 from core.executor import TaskExecution
 from core.planner import TaskList
 from ui.panels.chat_panel import ChatPanel
-from ui.panels.output_panel import OutputPanel
 from ui.panels.task_panel import TaskPanel
 
 if TYPE_CHECKING:
@@ -54,7 +53,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, cfg: AppConfig, on_save):
         super().__init__(parent)
         self.title("Settings")
-        self.geometry("400x380")
+        self.geometry("440x580")
         self.resizable(False, False)
         self._cfg = cfg
         self._on_save = on_save
@@ -62,7 +61,8 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _build(self):
         self.grid_columnconfigure(1, weight=1)
-        fields = [
+
+        text_fields = [
             ("Ollama URL", "ollama_base_url"),
             ("Planner Model", "planner_model"),
             ("Synthesizer Model", "synthesizer_model"),
@@ -71,21 +71,50 @@ class SettingsDialog(ctk.CTkToplevel):
             ("Memory Top-K", "memory_top_k"),
             ("Shell Timeout (s)", "shell_timeout_seconds"),
             ("Max Retries", "max_task_retries"),
+            ("Max History Turns", "max_conversation_history"),
+            ("ReAct Max Iterations", "react_max_iterations"),
         ]
+        bool_fields = [
+            ("ReAct Mode", "use_react_loop"),
+            ("Injection Protection", "prompt_injection_protection"),
+        ]
+
         self._vars: dict[str, ctk.StringVar] = {}
-        for row, (label, attr) in enumerate(fields):
+        self._bool_vars: dict[str, ctk.BooleanVar] = {}
+
+        row = 0
+        # Section: General
+        ctk.CTkLabel(self, text="GENEL", font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=("#9CA3AF", "#6B7280")).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 2))
+        row += 1
+
+        for label, attr in text_fields:
             ctk.CTkLabel(self, text=label, anchor="w").grid(
-                row=row, column=0, sticky="w", padx=12, pady=6
-            )
+                row=row, column=0, sticky="w", padx=12, pady=5)
             var = ctk.StringVar(value=str(getattr(self._cfg, attr)))
             self._vars[attr] = var
             ctk.CTkEntry(self, textvariable=var).grid(
-                row=row, column=1, sticky="ew", padx=12, pady=6
-            )
+                row=row, column=1, sticky="ew", padx=12, pady=5)
+            row += 1
 
-        ctk.CTkButton(self, text="Save", command=self._save).grid(
-            row=len(fields), column=0, columnspan=2, pady=16
-        )
+        # Section: Toggles
+        ctk.CTkLabel(self, text="SEÇENEKLER", font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color=("#9CA3AF", "#6B7280")).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 2))
+        row += 1
+
+        for label, attr in bool_fields:
+            ctk.CTkLabel(self, text=label, anchor="w").grid(
+                row=row, column=0, sticky="w", padx=12, pady=5)
+            bvar = ctk.BooleanVar(value=bool(getattr(self._cfg, attr)))
+            self._bool_vars[attr] = bvar
+            ctk.CTkSwitch(self, text="", variable=bvar, onvalue=True, offvalue=False).grid(
+                row=row, column=1, sticky="w", padx=12, pady=5)
+            row += 1
+
+        ctk.CTkButton(self, text="Kaydet", command=self._save).grid(
+            row=row, column=0, columnspan=2, pady=16)
 
     def _save(self):
         for attr, var in self._vars.items():
@@ -95,6 +124,8 @@ class SettingsDialog(ctk.CTkToplevel):
                 setattr(self._cfg, attr, field_type(val))
             except (ValueError, TypeError):
                 pass
+        for attr, bvar in self._bool_vars.items():
+            setattr(self._cfg, attr, bvar.get())
         save_config(self._cfg)
         self._on_save(self._cfg)
         self.destroy()
@@ -117,17 +148,17 @@ class DesktopAgentApp(ctk.CTk):
 
     def _build_layout(self) -> None:
         self.grid_rowconfigure(1, weight=1)
-        self.grid_columnconfigure(0, weight=3)
-        self.grid_columnconfigure(1, weight=2)
+        self.grid_columnconfigure(0, weight=5)  # chat — main content
+        self.grid_columnconfigure(1, weight=2)  # task sidebar
 
-        # Top bar
+        # ── Top bar ──────────────────────────────────────────────────
         topbar = ctk.CTkFrame(self, height=44, corner_radius=0)
         topbar.grid(row=0, column=0, columnspan=2, sticky="ew")
-        topbar.grid_columnconfigure(1, weight=1)
+        topbar.grid_columnconfigure(2, weight=1)  # spacer
 
         ctk.CTkLabel(
             topbar, text="Desktop Agent",
-            font=ctk.CTkFont(size=15, weight="bold")
+            font=ctk.CTkFont(size=15, weight="bold"),
         ).grid(row=0, column=0, padx=16, pady=8)
 
         self._model_var = ctk.StringVar(value=self._cfg.planner_model)
@@ -137,18 +168,17 @@ class DesktopAgentApp(ctk.CTk):
             command=self._on_model_change,
             width=180,
         )
-        self._model_menu.grid(row=0, column=1, padx=8, pady=8, sticky="w")
+        self._model_menu.grid(row=0, column=1, padx=(0, 4), pady=8)
 
         ctk.CTkButton(
-            topbar, text="↻", width=36,
+            topbar, text="↻", width=32,
             fg_color="transparent", border_width=1,
             command=lambda: threading.Thread(target=self._refresh_models, daemon=True).start(),
-        ).grid(row=0, column=2, padx=(0, 4), pady=8)
+        ).grid(row=0, column=2, padx=(0, 8), pady=8, sticky="w")
 
-        # Workspace seçici
+        # Workspace label (spacer column stretches)
         ws_frame = ctk.CTkFrame(topbar, fg_color="transparent")
-        ws_frame.grid(row=0, column=3, padx=8, pady=4, sticky="ew")
-
+        ws_frame.grid(row=0, column=3, padx=8, pady=4)
         ctk.CTkLabel(ws_frame, text="📁", font=ctk.CTkFont(size=13)).pack(side="left")
         self._ws_label = ctk.CTkLabel(
             ws_frame,
@@ -161,41 +191,30 @@ class DesktopAgentApp(ctk.CTk):
         self._ws_label.bind("<Button-1>", lambda _: self._pick_workspace())
 
         ctk.CTkButton(
-            topbar, text="Settings ⚙", width=100,
+            topbar, text="⚙", width=36,
             fg_color="transparent", border_width=1,
             command=self._open_settings,
         ).grid(row=0, column=4, padx=4, pady=8)
 
         ctk.CTkButton(
-            topbar, text="Theme ◐", width=80,
+            topbar, text="◐", width=36,
             fg_color="transparent", border_width=1,
             command=self._toggle_theme,
-        ).grid(row=0, column=5, padx=(0, 16), pady=8)
+        ).grid(row=0, column=5, padx=(0, 12), pady=8)
 
-        # Left: chat
+        # ── Main: chat (left) + task sidebar (right) ──────────────────
         self._chat = ChatPanel(self, on_submit=self._submit_query,
                                on_new_chat=self._on_new_chat)
         self._chat.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=8)
         self._chat.set_stop_callback(self._stop_agent)
 
-        # Right: task + output stacked
-        right = ctk.CTkFrame(self, fg_color="transparent")
-        right.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=8)
-        right.grid_rowconfigure(0, weight=2)
-        right.grid_rowconfigure(1, weight=3)
-        right.grid_columnconfigure(0, weight=1)
-
-        self._task_panel = TaskPanel(right)
-        self._task_panel.grid(row=0, column=0, sticky="nsew", pady=(0, 4))
+        self._task_panel = TaskPanel(self)
+        self._task_panel.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=8)
         self._task_panel.set_approval_callbacks(
             on_approve=self._approve_plan,
             on_reject=self._reject_plan,
         )
 
-        self._output_panel = OutputPanel(right)
-        self._output_panel.grid(row=1, column=0, sticky="nsew")
-
-        # Load model list in background
         threading.Thread(target=self._refresh_models, daemon=True).start()
 
     def _refresh_models(self) -> None:
@@ -237,6 +256,7 @@ class DesktopAgentApp(ctk.CTk):
         self._cfg.synthesizer_model = model
         self._agent._planner._model = model
         self._agent._synthesizer._model = model
+        self._agent._react_loop._model = model
 
     def _submit_query(self, query: str, attachments: list[str] | None = None) -> None:
         if self._worker_thread and self._worker_thread.is_alive():
@@ -246,21 +266,26 @@ class DesktopAgentApp(ctk.CTk):
         self._chat.start_agent_message()
         self._chat.set_stop_enabled(True)
         self._task_panel.clear()
-        self._output_panel.clear()
 
         def run():
-            answer = self._agent.run(
-                user_query=query,
-                attachments=attachments or [],
-                on_plan_ready=lambda tl: self.after(0, self._on_plan_ready, tl),
-                on_task_update=lambda ex: self.after(0, self._on_task_update, ex),
-                on_output_chunk=lambda ch: self.after(0, self._output_panel.append, ch),
-                on_answer_chunk=lambda ch: self.after(0, self._chat.append_agent_chunk, ch),
-                require_approval=True,
-            )
-            if not answer:
-                self.after(0, self._chat.append_agent_chunk, "(Plan iptal edildi.)")
-            self.after(0, self._on_agent_done)
+            try:
+                answer = self._agent.run(
+                    user_query=query,
+                    attachments=attachments or [],
+                    on_plan_ready=lambda tl: self.after(0, self._on_plan_ready, tl),
+                    on_task_update=lambda ex: self.after(0, self._on_task_update, ex),
+                    on_output_chunk=lambda ch: self.after(0, self._chat.append_tool_chunk, ch),
+                    on_answer_chunk=lambda ch: self.after(0, self._chat.append_agent_chunk, ch),
+                    require_approval=True,
+                )
+                if not answer:
+                    self.after(0, self._chat.append_agent_chunk, "(Plan iptal edildi.)")
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).exception("Agent run failed: %s", exc)
+                self.after(0, self._chat.append_agent_chunk, f"(Hata: {exc})")
+            finally:
+                self.after(0, self._on_agent_done)
 
         self._worker_thread = threading.Thread(target=run, daemon=True)
         self._worker_thread.start()
@@ -288,7 +313,6 @@ class DesktopAgentApp(ctk.CTk):
         self._agent.cancel()
         self._agent.clear_history()
         self._task_panel.clear()
-        self._output_panel.clear()
         self._chat.set_stop_enabled(False)
 
     def _stop_agent(self) -> None:

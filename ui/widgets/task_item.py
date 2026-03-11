@@ -17,12 +17,11 @@ class TaskItem(ctk.CTkFrame):
     def __init__(self, parent, task_id: str, tool: str, description: str, **kwargs):
         super().__init__(parent, fg_color="transparent", **kwargs)
         self._icon_var = ctk.StringVar(value="○")
-        self._color_var = "#6B7280"
 
         self._icon_label = ctk.CTkLabel(
             self, textvariable=self._icon_var,
             font=ctk.CTkFont(size=14),
-            text_color=self._color_var,
+            text_color="#6B7280",
             width=20,
         )
         self._icon_label.pack(side="left", padx=(4, 2))
@@ -45,7 +44,18 @@ class TaskItem(ctk.CTkFrame):
         )
         desc_label.pack(side="left", padx=4, fill="x", expand=True)
 
-    def set_status(self, status: TaskStatus) -> None:
+        self._elapsed_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=("#9CA3AF", "#6B7280"),
+            width=48,
+        )
+        self._elapsed_label.pack(side="right", padx=(4, 6))
+
+    def set_status(self, status: TaskStatus, elapsed: float | None = None) -> None:
         icon, color = _STATUS_ICONS.get(status, ("?", "#6B7280"))
         self._icon_var.set(icon)
         self._icon_label.configure(text_color=color)
+        if elapsed is not None and status in (TaskStatus.DONE, TaskStatus.FAILED):
+            self._elapsed_label.configure(text=f"{elapsed:.1f}s")

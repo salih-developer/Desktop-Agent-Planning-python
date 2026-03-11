@@ -11,6 +11,7 @@ import ollama
 from config import AppConfig, save_config
 from core.executor import Executor, TaskExecution
 from core.planner import Planner, TaskList
+from core.react_loop import ReactLoop
 from core.synthesizer import Synthesizer
 from logger import get_logger
 from memory.attachment_store import AttachmentStore
@@ -30,7 +31,21 @@ class Agent:
         self._attachment_store = AttachmentStore(self._embedder, dim=cfg.embedding_dim)
         self._planner = Planner(cfg.ollama_base_url, cfg.planner_model, self._registry)
         self._synthesizer = Synthesizer(cfg.ollama_base_url, cfg.synthesizer_model)
+        react_model = cfg.react_model or cfg.planner_model
+        from pathlib import Path as _Path
+        self._react_loop = ReactLoop(
+            base_url=cfg.ollama_base_url,
+            model=react_model,
+            registry=self._registry,
+            cancel_event=threading.Event(),  # replaced in reset_cancel
+            max_iterations=cfg.react_max_iterations,
+            max_tool_output_chars=cfg.max_tool_output_chars,
+            traces_dir=_Path(cfg.traces_dir) if cfg.traces_dir else None,
+            max_conversation_history=cfg.max_conversation_history,
+            prompt_injection_protection=cfg.prompt_injection_protection,
+        )
         self._conversation_history: list[dict] = []
+        self._session_image_b64: list[str] = []  # base64 images for vision models
         self._cancel_event = threading.Event()
         self._approval_event = threading.Event()
         self._approved = False
@@ -53,6 +68,7 @@ class Agent:
 
     def reset_cancel(self) -> None:
         self._cancel_event.clear()
+        self._react_loop._cancel = self._cancel_event
 
     def approve_plan(self) -> None:
         self._approved = True
@@ -84,17 +100,24 @@ class Agent:
         _log.info("━" * 50)
 
         # 0. Preprocess attachments → files_context (hybrid: direct inject or RAG)
+        self._session_image_b64.clear()  # reset for this query; repopulated by _handle_image
         files_context = ""
         if attachments:
             files_context = self._preprocess_attachments(attachments)
             _log.debug("FILES CONTEXT (%d chars):\n%s", len(files_context), files_context[:500])
 
-        # If session RAG store has indexed large files, retrieve relevant chunks
+        # If session RAG store has indexed files, retrieve relevant chunks
         if self._attachment_store.has_data():
             rag_context = self._attachment_store.build_context(user_query)
             if rag_context:
-                _log.debug("RAG CONTEXT (%d chars)", len(rag_context))
-                files_context = (files_context + "\n\n" + rag_context).strip()
+                file_names = ", ".join(self._attachment_store.get_all_file_names())
+                session_notice = (
+                    f"### Session Attachment Context\n"
+                    f"The following file(s) were attached earlier in this session: {file_names}\n"
+                    f"Their content is provided below — do NOT use find_files or file_read to locate them.\n"
+                )
+                _log.debug("RAG CONTEXT (%d chars) for files: %s", len(rag_context), file_names)
+                files_context = (files_context + "\n\n" + session_notice + "\n" + rag_context).strip()
 
         # 1. Memory search
         memory_results = self._memory.search(user_query, top_k=self._cfg.memory_top_k)
@@ -102,7 +125,19 @@ class Agent:
         for i, r in enumerate(memory_results, 1):
             _log.debug("  [mem %d] distance=%.3f  input=%r", i, r.distance, r.user_input[:80])
 
-        # 2. Plan
+        # 1b. ReAct mode — bypass Planner/Executor/Synthesizer
+        if self._cfg.use_react_loop:
+            return self._run_react(
+                user_query=user_query,
+                memory_results=memory_results,
+                files_context=files_context,
+                image_data=list(self._session_image_b64),
+                on_task_update=on_task_update,
+                on_output_chunk=on_output_chunk,
+                on_answer_chunk=on_answer_chunk,
+            )
+
+        # 2. Plan (classic mode)
         _log.info("Calling planner (model=%s)", self._cfg.planner_model)
         task_list = self._planner.plan(
             user_query,
@@ -207,6 +242,7 @@ class Agent:
         ".cpp", ".c", ".h", ".rb", ".php", ".swift", ".kt", ".r",
         ".toml", ".ini", ".cfg", ".conf", ".env",
     }
+    _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
     _MAX_TEXT_CHARS = 8000
     _MAX_PDF_CHARS = 12000
     _RAG_THRESHOLD_BYTES = 50 * 1024  # 50 KB — files larger than this go to RAG
@@ -224,6 +260,8 @@ class Agent:
                 parts.append(self._handle_pdf(i, p))
             elif p.suffix.lower() in self._TEXT_EXTENSIONS:
                 parts.append(self._handle_text_file(i, p))
+            elif p.suffix.lower() in self._IMAGE_EXTENSIONS:
+                parts.append(self._handle_image(i, p))
             else:
                 size = p.stat().st_size
                 parts.append(f"[{i}] {p.name} ({size:,} bytes — binary, içerik okunamadı)")
@@ -231,28 +269,43 @@ class Agent:
 
     def _handle_text_file(self, idx: int, p: Path) -> str:
         size = p.stat().st_size
+        content = self._read_text(p)
+        self._index_for_rag(p, content)  # Always index — makes content available for follow-up queries
         if size >= self._RAG_THRESHOLD_BYTES:
-            return self._index_for_rag(idx, p, self._read_text(p))
-        return self._format_text_file(idx, p)
+            # Large file — inject preview only
+            preview = content[:self._MAX_TEXT_CHARS]
+            suffix = (
+                f"\n... [{len(content) - self._MAX_TEXT_CHARS} karakter kırpıldı — tam içerik RAG ile erişilebilir]"
+                if len(content) > self._MAX_TEXT_CHARS else ""
+            )
+            return f"[{idx}] {p.name} ({p.suffix}, {size / 1024:.1f} KB)\n{'─'*40}\n{preview}{suffix}"
+        # Small file — inject full text
+        display = content
+        if len(display) > self._MAX_TEXT_CHARS:
+            display = display[:self._MAX_TEXT_CHARS] + f"\n... [{len(display) - self._MAX_TEXT_CHARS} karakter kırpıldı]"
+        return f"[{idx}] {p.name} ({p.suffix}, {size:,} bytes)\n{'─'*40}\n{display}"
 
     def _handle_pdf(self, idx: int, p: Path) -> str:
         text = self._extract_pdf_text(p)
+        self._index_for_rag(p, text)  # Always index — makes content available for follow-up queries
         if len(text.encode()) >= self._RAG_THRESHOLD_BYTES:
-            return self._index_for_rag(idx, p, text)
-        # Small PDF — inject directly
+            # Large PDF — inject preview only
+            preview = text[:self._MAX_PDF_CHARS]
+            suffix = (
+                f"\n... [{len(text) - self._MAX_PDF_CHARS} karakter kırpıldı — tam içerik RAG ile erişilebilir]"
+                if len(text) > self._MAX_PDF_CHARS else ""
+            )
+            return f"[{idx}] {p.name} (PDF, {p.stat().st_size / 1024:.1f} KB)\n{'─'*40}\n{preview}{suffix}"
+        # Small PDF — inject full text
         if len(text) > self._MAX_PDF_CHARS:
             text = text[:self._MAX_PDF_CHARS] + f"\n... [{len(text) - self._MAX_PDF_CHARS} karakter kırpıldı]"
         return f"[{idx}] {p.name} (PDF)\n{'─'*40}\n{text}"
 
-    def _index_for_rag(self, idx: int, p: Path, content: str) -> str:
-        """Index a large file into the session AttachmentStore; return a placeholder."""
+    def _index_for_rag(self, p: Path, content: str) -> int:
+        """Index a large file into the session AttachmentStore for supplemental RAG retrieval."""
         n_chunks = self._attachment_store.index(str(p), p.name, content)
         _log.info("RAG indexed %r → %d chunk(s)", p.name, n_chunks)
-        size_kb = p.stat().st_size / 1024
-        return (
-            f"[{idx}] {p.name} ({size_kb:.1f} KB — büyük dosya, RAG ile indekslendi, "
-            f"{n_chunks} parça. İlgili bölümler otomatik olarak alınacak.)"
-        )
+        return n_chunks
 
     def _read_text(self, p: Path) -> str:
         try:
@@ -260,11 +313,53 @@ class Agent:
         except Exception as e:
             return f"(Okuma hatası: {e})"
 
+    def _handle_image(self, idx: int, p: Path) -> str:
+        """Process image: encode as base64 for vision model, and try OCR as fallback."""
+        import base64
+
+        # Always encode for vision model (primary path)
+        try:
+            b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
+            self._session_image_b64.append(b64)
+        except Exception as e:
+            return f"[{idx}] {p.name} (Görsel — okunamadı: {e})"
+
+        # Try OCR as supplementary text extraction (fallback for non-vision models)
+        try:
+            import pytesseract
+            from PIL import Image as _PILImage
+            img = _PILImage.open(str(p))
+            text = pytesseract.image_to_string(img, lang="tur+eng")
+            if text.strip():
+                if len(text) > self._MAX_TEXT_CHARS:
+                    text = text[:self._MAX_TEXT_CHARS] + f"\n... [{len(text) - self._MAX_TEXT_CHARS} karakter kırpıldı]"
+                self._index_for_rag(p, text)
+                return f"[{idx}] {p.name} (Görsel — OCR metni aşağıda, görsel de vision modeline gönderildi)\n{'─'*40}\n{text}"
+        except ImportError:
+            pass  # No OCR — vision model will handle the image directly
+        except Exception:
+            pass
+
+        size = p.stat().st_size
+        return (
+            f"[{idx}] {p.name} (Görsel, {size / 1024:.1f} KB — "
+            f"görsel doğrudan vision modeline gönderildi, metin çıkarmak için OCR kurulmadı)"
+        )
+
     def _extract_pdf_text(self, p: Path) -> str:
         try:
             import pdfplumber
+            pages = []
             with pdfplumber.open(str(p)) as pdf:
-                return "\n\n".join(page.extract_text() or "" for page in pdf.pages)
+                for page in pdf.pages:
+                    try:
+                        pages.append(page.extract_text() or "")
+                    except Exception:
+                        pages.append("")  # skip unreadable pages silently
+            text = "\n\n".join(pages)
+            if not text.strip():
+                return f"(PDF metin içeriği okunamadı — taranmış görüntü veya özel font olabilir: {p.name})"
+            return text
         except ImportError:
             return "(pdfplumber kurulu değil)"
         except Exception as e:
@@ -303,9 +398,62 @@ class Agent:
                 lines.extend(self._build_tree(entry, prefix + extension, max_files - len(lines)))
         return lines
 
+    # ── ReAct execution path ───────────────────────────────────────────
+
+    def _run_react(
+        self,
+        user_query: str,
+        memory_results,
+        files_context: str,
+        image_data: list[str] | None = None,
+        on_task_update=None,
+        on_output_chunk=None,
+        on_answer_chunk=None,
+    ) -> str:
+        _log.info("Running in ReAct mode (model=%s)", self._react_loop._model)
+        if image_data:
+            _log.info("Passing %d image(s) to vision model", len(image_data))
+
+        answer, executions = self._react_loop.run(
+            user_query=user_query,
+            conversation_history=self._conversation_history,
+            memory_context=memory_results,
+            files_context=files_context,
+            image_data=image_data,
+            on_task_update=on_task_update or (lambda _: None),
+            on_output_chunk=on_output_chunk or (lambda _: None),
+            on_answer_chunk=on_answer_chunk or (lambda _: None),
+        )
+
+        _log.info("ReAct answer (%d chars): %s", len(answer), answer[:200])
+
+        # Store to memory
+        task_summary = [
+            {
+                "id": e.task.id,
+                "tool": e.task.tool,
+                "description": e.task.description,
+                "success": e.result.success if e.result else False,
+            }
+            for e in executions
+        ]
+        self._memory.store(
+            user_input=user_query,
+            assistant_output=answer,
+            task_summary=task_summary,
+            metadata={"model": self._react_loop._model, "mode": "react"},
+        )
+
+        # Update conversation history
+        self._conversation_history.append({"role": "user", "content": user_query})
+        self._conversation_history.append({"role": "assistant", "content": answer})
+
+        return answer
+
     def clear_history(self) -> None:
         self._conversation_history.clear()
         self._attachment_store.clear()
+        self._session_image_b64.clear()
 
     def get_available_models(self) -> list[str]:
         try:

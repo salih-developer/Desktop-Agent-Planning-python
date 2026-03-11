@@ -8,6 +8,7 @@ from typing import Callable
 import customtkinter as ctk
 
 from ui.widgets.message_bubble import MessageBubble
+from ui.widgets.tool_output_block import ToolOutputBlock
 
 
 class ChatPanel(ctk.CTkFrame):
@@ -17,6 +18,7 @@ class ChatPanel(ctk.CTkFrame):
         self._on_submit = on_submit
         self._on_new_chat = on_new_chat
         self._bubbles: list[MessageBubble] = []
+        self._current_tool_block: ToolOutputBlock | None = None
         self._current_agent_bubble: MessageBubble | None = None
         self._attachments: list[str] = []
 
@@ -94,7 +96,8 @@ class ChatPanel(ctk.CTkFrame):
         paths = filedialog.askopenfilenames(
             title="Dosya Seç",
             filetypes=[
-                ("Tüm desteklenen", "*.pdf *.txt *.md *.py *.cs *.js *.ts *.json *.yaml *.yml *.xml *.html *.csv"),
+                ("Tüm desteklenen", "*.pdf *.txt *.md *.py *.cs *.js *.ts *.json *.yaml *.yml *.xml *.html *.csv *.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                ("Görsel", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
                 ("PDF", "*.pdf"),
                 ("Metin", "*.txt *.md"),
                 ("Tüm dosyalar", "*.*"),
@@ -174,16 +177,27 @@ class ChatPanel(ctk.CTkFrame):
 
     def start_agent_message(self) -> None:
         self._auto_scroll = True
-        self._current_agent_bubble = MessageBubble(self._scroll, role="assistant", content="")
-        self._current_agent_bubble.pack(fill="x", pady=2)
+        self._current_tool_block = ToolOutputBlock(self._scroll)
+        self._current_tool_block.pack(fill="x", padx=8, pady=(2, 0))
+        self._current_agent_bubble = None  # created lazily on first answer chunk
         self._scroll_to_bottom()
 
-    def append_agent_chunk(self, chunk: str) -> None:
-        if self._current_agent_bubble:
-            self._current_agent_bubble.append(chunk)
+    def append_tool_chunk(self, chunk: str) -> None:
+        if self._current_tool_block:
+            self._current_tool_block.append(chunk)
             self._scroll_to_bottom()
 
+    def append_agent_chunk(self, chunk: str) -> None:
+        if self._current_agent_bubble is None:
+            self._current_agent_bubble = MessageBubble(
+                self._scroll, role="assistant", content=""
+            )
+            self._current_agent_bubble.pack(fill="x", pady=(4, 2))
+        self._current_agent_bubble.append(chunk)
+        self._scroll_to_bottom()
+
     def finish_agent_message(self) -> None:
+        self._current_tool_block = None
         self._current_agent_bubble = None
         self._scroll_to_bottom()
 
@@ -191,6 +205,7 @@ class ChatPanel(ctk.CTkFrame):
         for w in self._scroll.winfo_children():
             w.destroy()
         self._bubbles.clear()
+        self._current_tool_block = None
         self._current_agent_bubble = None
 
     # ── Internal ──────────────────────────────────────────────────────

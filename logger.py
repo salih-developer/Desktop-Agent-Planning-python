@@ -31,12 +31,14 @@ def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
-    # File handler — rotating, UTF-8, full detail
+    # File handler — Windows-safe: large maxBytes avoids mid-session rotation
+    # (RotatingFileHandler rotation fails on Windows when the file is open by another thread)
     fh = logging.handlers.RotatingFileHandler(
         _LOG_PATH,
-        maxBytes=5 * 1024 * 1024,  # 5 MB
-        backupCount=3,
+        maxBytes=50 * 1024 * 1024,  # 50 MB — rarely rotates
+        backupCount=2,
         encoding="utf-8",
+        delay=True,  # don't open until first write
     )
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(logging.Formatter(
@@ -53,7 +55,7 @@ def setup_logging() -> None:
     root.addHandler(ch)
 
     # Silence noisy third-party libraries
-    for lib in ("httpx", "httpcore", "urllib3", "ollama"):
+    for lib in ("httpx", "httpcore", "urllib3", "ollama", "pdfminer", "pdfplumber"):
         logging.getLogger(lib).setLevel(logging.WARNING)
 
 

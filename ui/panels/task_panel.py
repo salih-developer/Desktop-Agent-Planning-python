@@ -98,8 +98,17 @@ class TaskPanel(ctk.CTkFrame):
 
     def update_task(self, execution: TaskExecution) -> None:
         item = self._items.get(execution.task.id)
-        if item:
-            item.set_status(execution.status)
+        if item is None:
+            # ReAct mode: tasks arrive dynamically — create the item on first update
+            item = TaskItem(
+                self._scroll,
+                task_id=execution.task.id,
+                tool=execution.task.tool,
+                description=execution.task.description,
+            )
+            item.pack(fill="x", pady=2, padx=4)
+            self._items[execution.task.id] = item
+        item.set_status(execution.status, elapsed=execution.elapsed)
 
     def clear(self) -> None:
         for w in self._scroll.winfo_children():

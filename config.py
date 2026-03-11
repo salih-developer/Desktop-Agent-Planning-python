@@ -22,6 +22,16 @@ class AppConfig:
     max_task_retries: int = 2
     max_tool_output_chars: int = 8000
     workspace: str = str(Path.home())
+    # ReAct loop settings
+    use_react_loop: bool = True
+    react_model: str = ""          # empty = use planner_model
+    react_max_iterations: int = 15
+    traces_dir: str = str(Path(__file__).parent / "logs")
+
+    # Conversation & security
+    max_conversation_history: int = 8          # how many past turns to include
+    prompt_injection_protection: bool = True   # warn LLM when tool output looks like instructions
+
     blocked_commands: list[str] = field(default_factory=lambda: [
         r"rm\s+-rf\s+/",
         r"format\s+[a-zA-Z]:",

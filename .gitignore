@@ -1,0 +1,10 @@
+logs/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.dotnet/
+WebAgent/ClientApp/node_modules/
+WebAgent/telerik-license.txt
+WebAgent/wwwroot/assets/
+WebAgent/wwwroot/.vite/
