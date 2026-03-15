@@ -13,10 +13,12 @@ class AppConfig:
     ollama_base_url: str = "http://localhost:11434"
     planner_model: str = "qwen2.5:7b"
     synthesizer_model: str = "qwen2.5:7b"
+    vision_model: str = ""             # empty = use react_model; set to a vision-capable model (e.g. qwen2-vl:7b)
     embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
     db_path: str = str(Path.home() / ".desktop_agent" / "memory.db")
     memory_top_k: int = 5
+    memory_max_distance: float = 0.8  # KNN results with distance > this are discarded (irrelevant memories)
     shell_timeout_seconds: int = 30
     web_fetch_timeout_seconds: int = 15
     max_task_retries: int = 2

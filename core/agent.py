@@ -25,14 +25,13 @@ _log = get_logger(__name__)
 class Agent:
     def __init__(self, cfg: AppConfig):
         self._cfg = cfg
-        self._registry = build_default_registry()
+        self._registry = build_default_registry(workspace=cfg.workspace)
         self._embedder = OllamaEmbedder(cfg.embedding_model, cfg.ollama_base_url)
         self._memory = MemoryStore(cfg.db_path, self._embedder)
         self._attachment_store = AttachmentStore(self._embedder, dim=cfg.embedding_dim)
         self._planner = Planner(cfg.ollama_base_url, cfg.planner_model, self._registry)
         self._synthesizer = Synthesizer(cfg.ollama_base_url, cfg.synthesizer_model)
         react_model = cfg.react_model or cfg.planner_model
-        from pathlib import Path as _Path
         self._react_loop = ReactLoop(
             base_url=cfg.ollama_base_url,
             model=react_model,
@@ -40,27 +39,22 @@ class Agent:
             cancel_event=threading.Event(),  # replaced in reset_cancel
             max_iterations=cfg.react_max_iterations,
             max_tool_output_chars=cfg.max_tool_output_chars,
-            traces_dir=_Path(cfg.traces_dir) if cfg.traces_dir else None,
+            traces_dir=Path(cfg.traces_dir) if cfg.traces_dir else None,
             max_conversation_history=cfg.max_conversation_history,
             prompt_injection_protection=cfg.prompt_injection_protection,
+            workspace=cfg.workspace,
         )
         self._conversation_history: list[dict] = []
         self._session_image_b64: list[str] = []  # base64 images for vision models
         self._cancel_event = threading.Event()
         self._approval_event = threading.Event()
         self._approved = False
-        if cfg.workspace:
-            self.set_workspace(cfg.workspace)
 
     def set_workspace(self, path: str) -> None:
         self._cfg.workspace = path
         save_config(self._cfg)
-        for tool_name in ("file_read", "file_write", "file_edit",
-                           "shell_run", "dir_tree", "find_files"):
-            try:
-                self._registry.get(tool_name).workspace = path
-            except KeyError:
-                pass
+        self._registry.set_workspace(path)
+        self._react_loop._workspace = path
 
     def cancel(self) -> None:
         self._cancel_event.set()
@@ -120,7 +114,7 @@ class Agent:
                 files_context = (files_context + "\n\n" + session_notice + "\n" + rag_context).strip()
 
         # 1. Memory search
-        memory_results = self._memory.search(user_query, top_k=self._cfg.memory_top_k)
+        memory_results = self._memory.search(user_query, top_k=self._cfg.memory_top_k, max_distance=self._cfg.memory_max_distance)
         _log.debug("Memory search returned %d result(s)", len(memory_results))
         for i, r in enumerate(memory_results, 1):
             _log.debug("  [mem %d] distance=%.3f  input=%r", i, r.distance, r.user_input[:80])
@@ -243,6 +237,7 @@ class Agent:
         ".toml", ".ini", ".cfg", ".conf", ".env",
     }
     _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+    _VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
     _MAX_TEXT_CHARS = 8000
     _MAX_PDF_CHARS = 12000
     _RAG_THRESHOLD_BYTES = 50 * 1024  # 50 KB — files larger than this go to RAG
@@ -262,6 +257,8 @@ class Agent:
                 parts.append(self._handle_text_file(i, p))
             elif p.suffix.lower() in self._IMAGE_EXTENSIONS:
                 parts.append(self._handle_image(i, p))
+            elif p.suffix.lower() in self._VIDEO_EXTENSIONS:
+                parts.append(self._handle_video(i, p))
             else:
                 size = p.stat().st_size
                 parts.append(f"[{i}] {p.name} ({size:,} bytes — binary, içerik okunamadı)")
@@ -346,6 +343,33 @@ class Agent:
             f"görsel doğrudan vision modeline gönderildi, metin çıkarmak için OCR kurulmadı)"
         )
 
+    def _handle_video(self, idx: int, p: Path, max_frames: int = 4) -> str:
+        """Extract frames from a video file and add them to the vision model queue.
+
+        Args:
+            idx: Attachment index (for display).
+            p: Path to the video file.
+            max_frames: How many evenly-spaced frames to extract.
+
+        Returns:
+            A summary string describing the attachment and how many frames were extracted.
+        """
+        from core.vision import extract_video_frames
+
+        size = p.stat().st_size
+        frames = extract_video_frames(p, max_frames=max_frames)
+        if not frames:
+            return (
+                f"[{idx}] {p.name} (Video, {size / (1024 * 1024):.1f} MB — "
+                f"frame extraction başarısız: cv2 veya ffmpeg kurulu değil)"
+            )
+
+        self._session_image_b64.extend(frames)
+        return (
+            f"[{idx}] {p.name} (Video, {size / (1024 * 1024):.1f} MB — "
+            f"{len(frames)} frame çıkarıldı ve vision modeline gönderildi)"
+        )
+
     def _extract_pdf_text(self, p: Path) -> str:
         try:
             import pdfplumber
@@ -410,20 +434,38 @@ class Agent:
         on_output_chunk=None,
         on_answer_chunk=None,
     ) -> str:
-        _log.info("Running in ReAct mode (model=%s)", self._react_loop._model)
-        if image_data:
-            _log.info("Passing %d image(s) to vision model", len(image_data))
+        # Switch to vision model when images/video frames are present, restore after
+        react_model = self._cfg.react_model or self._cfg.planner_model
+        vision_model = self._cfg.vision_model.strip() if self._cfg.vision_model else ""
+        if image_data and vision_model:
+            _log.info(
+                "Switching to vision model %r for %d image(s)/frame(s)",
+                vision_model, len(image_data),
+            )
+            self._react_loop.set_model(vision_model)
+        elif image_data:
+            _log.info(
+                "Passing %d image(s)/frame(s) to react model (no vision_model configured)",
+                len(image_data),
+            )
 
-        answer, executions = self._react_loop.run(
-            user_query=user_query,
-            conversation_history=self._conversation_history,
-            memory_context=memory_results,
-            files_context=files_context,
-            image_data=image_data,
-            on_task_update=on_task_update or (lambda _: None),
-            on_output_chunk=on_output_chunk or (lambda _: None),
-            on_answer_chunk=on_answer_chunk or (lambda _: None),
-        )
+        _log.info("Running in ReAct mode (model=%s)", self._react_loop._model)
+
+        try:
+            answer, executions = self._react_loop.run(
+                user_query=user_query,
+                conversation_history=self._conversation_history,
+                memory_context=memory_results,
+                files_context=files_context,
+                image_data=image_data,
+                on_task_update=on_task_update or (lambda _: None),
+                on_output_chunk=on_output_chunk or (lambda _: None),
+                on_answer_chunk=on_answer_chunk or (lambda _: None),
+            )
+        finally:
+            # Always restore the default react model after a vision call
+            if image_data and vision_model:
+                self._react_loop.set_model(react_model)
 
         _log.info("ReAct answer (%d chars): %s", len(answer), answer[:200])
 

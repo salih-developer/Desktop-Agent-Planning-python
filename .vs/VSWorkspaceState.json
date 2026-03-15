@@ -1,8 +1,9 @@
 {
   "ExpandedNodes": [
     "",
+    "\\tools",
     "\\ui"
   ],
-  "SelectedNode": "\\main.py",
+  "SelectedNode": "\\tools\\filesystem_tool.py",
   "PreviewInSolutionExplorer": false
 }

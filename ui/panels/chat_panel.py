@@ -96,8 +96,9 @@ class ChatPanel(ctk.CTkFrame):
         paths = filedialog.askopenfilenames(
             title="Dosya Seç",
             filetypes=[
-                ("Tüm desteklenen", "*.pdf *.txt *.md *.py *.cs *.js *.ts *.json *.yaml *.yml *.xml *.html *.csv *.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                ("Tüm desteklenen", "*.pdf *.txt *.md *.py *.cs *.js *.ts *.json *.yaml *.yml *.xml *.html *.csv *.png *.jpg *.jpeg *.gif *.bmp *.webp *.mp4 *.avi *.mov *.mkv *.webm *.flv *.wmv *.m4v"),
                 ("Görsel", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                ("Video", "*.mp4 *.avi *.mov *.mkv *.webm *.flv *.wmv *.m4v"),
                 ("PDF", "*.pdf"),
                 ("Metin", "*.txt *.md"),
                 ("Tüm dosyalar", "*.*"),
@@ -129,7 +130,17 @@ class ChatPanel(ctk.CTkFrame):
             chip = ctk.CTkFrame(self._chip_frame, fg_color=("#E5E7EB", "#374151"), corner_radius=6)
             chip.pack(side="left", padx=(0, 4), pady=2)
 
-            icon = "📁" if os.path.isdir(path) else "📄"
+            _VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv", ".wmv", ".m4v"}
+            _IMG_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+            suffix = Path(path).suffix.lower()
+            if os.path.isdir(path):
+                icon = "📁"
+            elif suffix in _VIDEO_EXTS:
+                icon = "🎬"
+            elif suffix in _IMG_EXTS:
+                icon = "🖼️"
+            else:
+                icon = "📄"
             ctk.CTkLabel(chip, text=f"{icon} {name}", font=ctk.CTkFont(size=11)).pack(side="left", padx=(6, 2))
 
             idx = i  # capture for closure

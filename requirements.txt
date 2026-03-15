@@ -5,3 +5,5 @@ httpx
 pydantic
 pyyaml
 pdfplumber
+paramiko
+opencv-python

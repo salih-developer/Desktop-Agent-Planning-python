@@ -4,7 +4,7 @@ from tools.base import BaseTool
 
 
 class ToolRegistry:
-    def __init__(self):
+    def __init__(self) -> None:
         self._tools: dict[str, BaseTool] = {}
 
     def register(self, tool: BaseTool) -> None:
@@ -18,15 +18,26 @@ class ToolRegistry:
     def all_tools(self) -> list[BaseTool]:
         return list(self._tools.values())
 
+    def set_workspace(self, path: str) -> None:
+        """Set the workspace path on every tool that supports it.
+
+        Args:
+            path: Absolute path to the workspace directory.
+        """
+        for tool in self._tools.values():
+            if hasattr(tool, "workspace"):
+                tool.workspace = path
+
     def to_text_manifest(self) -> str:
         return "\n\n".join(t.to_text_description() for t in self._tools.values())
 
 
-def build_default_registry() -> ToolRegistry:
+def build_default_registry(workspace: str | None = None) -> ToolRegistry:
     from tools.file_tools import FileRead, FileWrite, FileEdit
     from tools.shell_tool import ShellRun
     from tools.web_tools import WebSearch, WebFetch
     from tools.filesystem_tool import DirectoryTree, FindFiles
+    from tools.ssh_tool import SSHRun
 
     registry = ToolRegistry()
     for tool in [
@@ -34,6 +45,11 @@ def build_default_registry() -> ToolRegistry:
         ShellRun(),
         WebSearch(), WebFetch(),
         DirectoryTree(), FindFiles(),
+        SSHRun(),
     ]:
         registry.register(tool)
+
+    if workspace:
+        registry.set_workspace(workspace)
+
     return registry

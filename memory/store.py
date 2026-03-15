@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from pathlib import Path
 import sqlite_vec
 
 from memory.embedder import OllamaEmbedder
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,6 +23,27 @@ class MemoryResult:
     distance: float
     created_at: str
     metadata: dict
+
+
+def _row_to_result(r: sqlite3.Row, distance: float | None = None) -> MemoryResult:
+    """Convert a DB row to a MemoryResult.
+
+    Args:
+        r: Row from the conversations (+ optional distance) query.
+        distance: Override distance value (used when the column is absent, e.g. get_recent).
+
+    Returns:
+        Populated MemoryResult dataclass.
+    """
+    return MemoryResult(
+        row_id=r["id"],
+        user_input=r["user_input"],
+        assistant_output=r["assistant_output"],
+        task_summary=r["task_summary"],
+        distance=distance if distance is not None else r["distance"],
+        created_at=r["created_at"],
+        metadata=json.loads(r["metadata"]),
+    )
 
 
 class MemoryStore:
@@ -59,8 +83,7 @@ class MemoryStore:
         try:
             embedding = self._embedder.embed(combined)  # slow HTTP — outside lock
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("Memory store skipped (embedding failed): %s", e)
+            _log.warning("Memory store skipped (embedding failed): %s", e)
             return -1
         embedding_bytes = json.dumps(embedding)
 
@@ -78,12 +101,11 @@ class MemoryStore:
                 )
         return row_id
 
-    def search(self, query: str, top_k: int = 5) -> list[MemoryResult]:
+    def search(self, query: str, top_k: int = 5, max_distance: float | None = None) -> list[MemoryResult]:
         try:
             embedding = self._embedder.embed(query)  # slow HTTP — outside lock
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("Memory search skipped (embedding failed): %s", e)
+            _log.warning("Memory search skipped (embedding failed): %s", e)
             return []
         embedding_bytes = json.dumps(embedding)
 
@@ -101,18 +123,10 @@ class MemoryStore:
                 (embedding_bytes, top_k),
             ).fetchall()
 
-        return [
-            MemoryResult(
-                row_id=r["id"],
-                user_input=r["user_input"],
-                assistant_output=r["assistant_output"],
-                task_summary=r["task_summary"],
-                distance=r["distance"],
-                created_at=r["created_at"],
-                metadata=json.loads(r["metadata"]),
-            )
-            for r in rows
-        ]
+        results = [_row_to_result(r) for r in rows]
+        if max_distance is not None:
+            results = [r for r in results if r.distance <= max_distance]
+        return results
 
     def get_recent(self, n: int = 10) -> list[MemoryResult]:
         with self._lock:
@@ -123,18 +137,7 @@ class MemoryStore:
                 (n,),
             ).fetchall()
 
-        return [
-            MemoryResult(
-                row_id=r["id"],
-                user_input=r["user_input"],
-                assistant_output=r["assistant_output"],
-                task_summary=r["task_summary"],
-                distance=r["distance"],
-                created_at=r["created_at"],
-                metadata=json.loads(r["metadata"]),
-            )
-            for r in rows
-        ]
+        return [_row_to_result(r) for r in rows]
 
     def delete(self, row_id: int) -> None:
         with self._lock:
