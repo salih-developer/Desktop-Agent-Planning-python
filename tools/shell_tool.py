@@ -17,6 +17,10 @@ _BLOCKED_PATTERNS = [
     re.compile(r"mkfs", re.IGNORECASE),
     re.compile(r"shutdown", re.IGNORECASE),
     re.compile(r"reboot", re.IGNORECASE),
+    # Recursive disk-wide scans — extremely slow and expose unrelated files
+    re.compile(r"\bdir\b[^|&;]*\/s[^|&;]*[a-zA-Z]:\\", re.IGNORECASE),   # dir /s ... D:\...
+    re.compile(r"\bdir\b[^|&;]*[a-zA-Z]:\\[^|&;]*\/s", re.IGNORECASE),   # dir D:\... /s
+    re.compile(r"\bfind\b\s+[a-zA-Z]:\\\s", re.IGNORECASE),               # find D:\ ...
 ]
 
 

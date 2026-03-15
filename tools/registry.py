@@ -38,6 +38,8 @@ def build_default_registry(workspace: str | None = None) -> ToolRegistry:
     from tools.web_tools import WebSearch, WebFetch
     from tools.filesystem_tool import DirectoryTree, FindFiles
     from tools.ssh_tool import SSHRun
+    from tools.process_tool import ProcessStart, ProcessStop, ProcessList
+    from tools.browser_tool import BrowserOpen
 
     registry = ToolRegistry()
     for tool in [
@@ -46,6 +48,8 @@ def build_default_registry(workspace: str | None = None) -> ToolRegistry:
         WebSearch(), WebFetch(),
         DirectoryTree(), FindFiles(),
         SSHRun(),
+        ProcessStart(), ProcessStop(), ProcessList(),
+        BrowserOpen(),
     ]:
         registry.register(tool)
 

@@ -88,12 +88,14 @@ class FileRead(BaseTool):
             total_lines = len(lines)
             start = 1 if start_line is None else max(1, start_line)
             end = total_lines if end_line is None else min(total_lines, end_line)
-            if end < start:
+            if start > total_lines:
                 return ToolResult(
-                    success=False,
-                    output="",
-                    error=f"Invalid line range: start_line={start} end_line={end}",
+                    success=True,
+                    output=f"(File has only {total_lines} line(s); start_line={start} is beyond end of file.)",
+                    data={**data, "start_line": start, "end_line": end, "total_lines": total_lines, "chunked": True},
                 )
+            if end < start:
+                end = start
 
             chunk = "".join(lines[start - 1 : end]) if total_lines else ""
             data.update(

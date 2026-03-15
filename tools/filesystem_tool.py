@@ -7,9 +7,25 @@ from pathlib import Path
 from tools.base import BaseTool, ToolParam, ToolResult
 
 
+def _jail_fs(path: str | None, workspace: str | None) -> tuple[Path, None] | tuple[None, str]:
+    """Resolve path and enforce it stays inside workspace.
+    Returns (resolved_path, None) on success or (None, error_message) on violation."""
+    ws = Path(workspace).resolve() if workspace else None
+    candidate = Path(path) if path else (ws or Path.cwd())
+    if not candidate.is_absolute():
+        candidate = (ws or Path.cwd()) / candidate
+    resolved = candidate.resolve()
+    if ws and not str(resolved).startswith(str(ws)):
+        return None, (
+            f"Access denied: '{path}' is outside the workspace '{ws}'. "
+            f"Only paths inside the workspace are allowed."
+        )
+    return resolved, None
+
+
 class DirectoryTree(BaseTool):
     name = "dir_tree"
-    description = "List the directory tree starting from a path."
+    description = "List the directory tree starting from a path inside the workspace."
     params = [
         ToolParam("path", "string", "Root directory path. If omitted uses workspace.", required=False, default=None),
         ToolParam("max_depth", "integer", "Max depth to traverse.", required=False, default=3),
@@ -19,16 +35,13 @@ class DirectoryTree(BaseTool):
         self.workspace: str | None = None
 
     def execute(self, path: str | None = None, max_depth: int = 3, **_) -> ToolResult:
-        base = Path(self.workspace) if self.workspace else Path.home()
-        root_path = path or self.workspace or str(Path.home())
-        candidate = Path(root_path)
-        if not candidate.is_absolute():
-            candidate = base / candidate
-        path = str(candidate)
+        resolved, err = _jail_fs(path, self.workspace)
+        if err:
+            return ToolResult(success=False, output="", error=err)
         try:
-            root = Path(path)
+            root = resolved
             if not root.exists():
-                return ToolResult(success=False, output="", error=f"Path does not exist: {path}")
+                return ToolResult(success=False, output="", error=f"Path does not exist: {root}")
             lines = [str(root)]
             self._walk(root, "", 0, max_depth, lines)
             output = "\n".join(lines)
@@ -64,14 +77,11 @@ class FindFiles(BaseTool):
         self.workspace: str | None = None
 
     def execute(self, path: str | None = None, pattern: str = "*", max_results: int = 50, **_) -> ToolResult:
-        base = Path(self.workspace) if self.workspace else Path.home()
-        root_path = path or self.workspace or str(Path.home())
-        candidate = Path(root_path)
-        if not candidate.is_absolute():
-            candidate = base / candidate
-        path = str(candidate)
+        resolved, err = _jail_fs(path, self.workspace)
+        if err:
+            return ToolResult(success=False, output="", error=err)
         try:
-            root = Path(path)
+            root = resolved
             matches = []
             for entry in root.rglob("*"):
                 if fnmatch.fnmatch(entry.name, pattern.lstrip("**/")) or fnmatch.fnmatch(
