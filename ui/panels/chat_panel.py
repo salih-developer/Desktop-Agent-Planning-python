@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import io
 import os
 from pathlib import Path
 from tkinter import filedialog
@@ -198,6 +200,16 @@ class ChatPanel(ctk.CTkFrame):
             self._current_tool_block.append(chunk)
             self._scroll_to_bottom()
 
+    def tool_start(self) -> None:
+        """Called when a tool begins executing — starts spinner."""
+        if self._current_tool_block:
+            self._current_tool_block.start_spin()
+
+    def tool_done(self) -> None:
+        """Called when a tool finishes — stops spinner / marks complete."""
+        if self._current_tool_block:
+            self._current_tool_block.finish()
+
     def append_agent_chunk(self, chunk: str) -> None:
         if self._current_agent_bubble is None:
             self._current_agent_bubble = MessageBubble(
@@ -206,6 +218,44 @@ class ChatPanel(ctk.CTkFrame):
             self._current_agent_bubble.pack(fill="x", pady=(4, 2))
         self._current_agent_bubble.append(chunk)
         self._scroll_to_bottom()
+
+    def show_screenshot(self, image_b64: str) -> None:
+        """Render a base64-encoded screenshot as a 300×300 thumbnail in the chat stream."""
+        try:
+            from PIL import Image, ImageTk
+        except ImportError:
+            return  # Pillow not installed — skip silently
+
+        try:
+            img_bytes = base64.b64decode(image_b64)
+            img = Image.open(io.BytesIO(img_bytes))
+            img.thumbnail((300, 300), Image.LANCZOS)
+
+            # Keep a reference so GC doesn't collect it
+            photo = ImageTk.PhotoImage(img)
+
+            frame = ctk.CTkFrame(
+                self._scroll,
+                fg_color=("#1A1A2E", "#0D0D1A"),
+                corner_radius=8,
+                border_width=1,
+                border_color=("#2D2D44", "#1A1A2E"),
+            )
+            ctk.CTkLabel(
+                frame,
+                text="📸  ekran görüntüsü",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=("#6B7280", "#4B5563"),
+            ).pack(anchor="w", padx=10, pady=(6, 2))
+
+            lbl = ctk.CTkLabel(frame, text="", image=photo)
+            lbl.image = photo  # prevent GC
+            lbl.pack(padx=10, pady=(0, 8))
+
+            frame.pack(fill="x", padx=8, pady=(2, 0))
+            self._scroll_to_bottom()
+        except Exception:
+            pass  # never crash the UI over a thumbnail failure
 
     def finish_agent_message(self) -> None:
         self._current_tool_block = None

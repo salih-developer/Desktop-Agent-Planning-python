@@ -81,6 +81,9 @@ class Agent:
         on_task_update: Callable[[TaskExecution], None] | None = None,
         on_output_chunk: Callable[[str], None] | None = None,
         on_answer_chunk: Callable[[str], None] | None = None,
+        on_image: Callable[[str], None] | None = None,
+        on_tool_start: Callable[[], None] | None = None,
+        on_tool_done: Callable[[], None] | None = None,
         require_approval: bool = True,
     ) -> str:
         self.reset_cancel()
@@ -129,6 +132,9 @@ class Agent:
                 on_task_update=on_task_update,
                 on_output_chunk=on_output_chunk,
                 on_answer_chunk=on_answer_chunk,
+                on_image=on_image,
+                on_tool_start=on_tool_start,
+                on_tool_done=on_tool_done,
             )
 
         # 2. Plan (classic mode)
@@ -433,6 +439,9 @@ class Agent:
         on_task_update=None,
         on_output_chunk=None,
         on_answer_chunk=None,
+        on_image=None,
+        on_tool_start=None,
+        on_tool_done=None,
     ) -> str:
         # Switch to vision model when images/video frames are present, restore after
         react_model = self._cfg.react_model or self._cfg.planner_model
@@ -461,6 +470,9 @@ class Agent:
                 on_task_update=on_task_update or (lambda _: None),
                 on_output_chunk=on_output_chunk or (lambda _: None),
                 on_answer_chunk=on_answer_chunk or (lambda _: None),
+                on_image=on_image or (lambda _: None),
+                on_tool_start=on_tool_start,
+                on_tool_done=on_tool_done,
             )
         finally:
             # Always restore the default react model after a vision call

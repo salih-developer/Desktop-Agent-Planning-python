@@ -40,6 +40,10 @@ def build_default_registry(workspace: str | None = None) -> ToolRegistry:
     from tools.ssh_tool import SSHRun
     from tools.process_tool import ProcessStart, ProcessStop, ProcessList
     from tools.browser_tool import BrowserOpen
+    from tools.playwright_tool import (
+        PlaywrightNavigate, PlaywrightScreenshot, PlaywrightClick,
+        PlaywrightFill, PlaywrightGetText, PlaywrightEvaluate, PlaywrightClose,
+    )
 
     registry = ToolRegistry()
     for tool in [
@@ -50,6 +54,8 @@ def build_default_registry(workspace: str | None = None) -> ToolRegistry:
         SSHRun(),
         ProcessStart(), ProcessStop(), ProcessList(),
         BrowserOpen(),
+        PlaywrightNavigate(), PlaywrightScreenshot(), PlaywrightClick(),
+        PlaywrightFill(), PlaywrightGetText(), PlaywrightEvaluate(), PlaywrightClose(),
     ]:
         registry.register(tool)
 

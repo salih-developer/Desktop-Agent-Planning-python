@@ -16,7 +16,7 @@ class AppConfig:
     vision_model: str = ""             # empty = use react_model; set to a vision-capable model (e.g. qwen2-vl:7b)
     embedding_model: str = "nomic-embed-text"
     embedding_dim: int = 768
-    db_path: str = str(Path.home() / ".desktop_agent" / "memory.db")
+    db_path: str = str(Path(__file__).parent / "database" / "memory.db")
     memory_top_k: int = 5
     memory_max_distance: float = 0.8  # KNN results with distance > this are discarded (irrelevant memories)
     shell_timeout_seconds: int = 30
@@ -27,7 +27,7 @@ class AppConfig:
     # ReAct loop settings
     use_react_loop: bool = True
     react_model: str = ""          # empty = use planner_model
-    react_max_iterations: int = 15
+    react_max_iterations: int = 30
     traces_dir: str = str(Path(__file__).parent / "logs")
 
     # Conversation & security

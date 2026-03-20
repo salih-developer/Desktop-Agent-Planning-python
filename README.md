@@ -15,6 +15,8 @@ A locally-running, Ollama-powered desktop AI assistant. Built on a ReAct loop wi
 - Detailed `.log` trace file written to `logs/` for every session
 
 ### Tools
+
+**Core**
 | Tool | Description |
 |------|-------------|
 | `file_read` | Reads files; supports line range for large files |
@@ -26,6 +28,43 @@ A locally-running, Ollama-powered desktop AI assistant. Built on a ReAct loop wi
 | `dir_tree` | Outputs a directory tree |
 | `find_files` | Searches for files by glob pattern |
 | `ssh_run` | Executes commands on remote hosts via SSH (password or key auth) |
+
+**Browser Automation (Playwright)**
+| Tool | Description |
+|------|-------------|
+| `playwright_navigate` | Open a URL in the browser; returns page title + visible text snapshot |
+| `playwright_screenshot` | Capture a full-page or viewport screenshot; result is analyzed by the vision model and shown as a 300×300 thumbnail in chat |
+| `playwright_click` | Click an element by CSS selector or visible text (e.g. `button#submit`, `text=Login`) |
+| `playwright_fill` | Clear and type text into an input or textarea |
+| `playwright_get_text` | Read visible text from an element or the whole page body |
+| `playwright_evaluate` | Execute arbitrary JavaScript in the page context and return the result |
+| `playwright_close` | Close the browser and release all Playwright resources |
+
+The browser is a **persistent singleton** — it opens once and stays open across all tool calls within a session, preserving cookies, session state, and navigation history.
+
+### Screenshot Vision Feedback
+
+When the agent takes a browser screenshot, the image is processed through two parallel paths:
+
+1. **Vision analysis** — the raw base64 image is injected directly into the conversation as an Ollama vision message. The model analyzes what it sees and uses that to decide the next action (e.g. which button to click, whether a login succeeded, what error is displayed).
+
+2. **UI thumbnail** — simultaneously, the same image is decoded with Pillow, resized to fit within 300×300 pixels (aspect ratio preserved), and displayed inline in the chat panel as a `📸 ekran görüntüsü` block — no file path needed.
+
+**Example flow:**
+```
+Agent: playwright_navigate → http://localhost:5000/login
+Agent: playwright_fill    → #username = "admin"
+Agent: playwright_fill    → #password = "secret"
+Agent: playwright_click   → button[type=submit]
+Agent: playwright_screenshot → login_result.png
+  → Vision model sees: "Login successful. Dashboard is now visible."
+  → Chat panel shows: [thumbnail 300×300]
+Agent: (continues based on what it saw)
+```
+
+This closes the visual feedback loop — the agent does not guess whether an action worked; it looks at the result.
+
+---
 
 ### Vision & Multimodal
 - Attach **images** (PNG, JPG, JPEG, GIF, BMP, WEBP, TIFF) — encoded as base64 and sent directly to the vision model
@@ -120,6 +159,7 @@ python main.py
 
 | Package | Purpose |
 |---------|---------|
+| `playwright` | Browser automation (+ `playwright install chromium`) |
 | `opencv-python` | Video frame extraction |
 | `pytesseract` + `Pillow` | OCR fallback for images |
 | `paramiko` | SSH remote access |
@@ -151,7 +191,8 @@ DesktopAgentPlanning/
 │   ├── shell_tool.py        # shell_run
 │   ├── web_tools.py         # web_search / web_fetch
 │   ├── filesystem_tool.py   # dir_tree / find_files
-│   └── ssh_tool.py          # ssh_run (remote SSH execution)
+│   ├── ssh_tool.py          # ssh_run (remote SSH execution)
+│   └── playwright_tool.py   # playwright_navigate/screenshot/click/fill/get_text/evaluate/close
 ├── ui/
 │   ├── app.py               # CTk root, threading bridge, SettingsDialog
 │   └── panels/

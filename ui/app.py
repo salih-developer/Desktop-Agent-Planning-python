@@ -276,6 +276,9 @@ class DesktopAgentApp(ctk.CTk):
                     on_task_update=lambda ex: self.after(0, self._on_task_update, ex),
                     on_output_chunk=lambda ch: self.after(0, self._chat.append_tool_chunk, ch),
                     on_answer_chunk=lambda ch: self.after(0, self._chat.append_agent_chunk, ch),
+                    on_image=lambda b64: self.after(0, self._chat.show_screenshot, b64),
+                    on_tool_start=lambda: self.after(0, self._chat.tool_start),
+                    on_tool_done=lambda: self.after(0, self._chat.tool_done),
                     require_approval=True,
                 )
                 if not answer:

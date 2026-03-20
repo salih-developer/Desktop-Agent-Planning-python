@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{C1D2E3F4-A5B6-7890-ABCD-EF1234567890}</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>main.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888A0-9F3D-457C-B088-3A5042F75D52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>Global|PythonCore|3.13</InterpreterId>
+    <InterpreterVersion>
+    </InterpreterVersion>
+    <RootNamespace>DesktopAgentPlanning</RootNamespace>
+    <Name>DesktopAgentPlanning</Name>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Root -->
+    <Compile Include="main.py" />
+    <Compile Include="config.py" />
+    <Compile Include="logger.py" />
+    <Compile Include="benchmark.py" />
+    <!-- core -->
+    <Compile Include="core\__init__.py" />
+    <Compile Include="core\agent.py" />
+    <Compile Include="core\executor.py" />
+    <Compile Include="core\planner.py" />
+    <Compile Include="core\react_loop.py" />
+    <Compile Include="core\react_tracer.py" />
+    <Compile Include="core\synthesizer.py" />
+    <Compile Include="core\vision.py" />
+    <!-- memory -->
+    <Compile Include="memory\__init__.py" />
+    <Compile Include="memory\attachment_store.py" />
+    <Compile Include="memory\embedder.py" />
+    <Compile Include="memory\store.py" />
+    <!-- tools -->
+    <Compile Include="tools\__init__.py" />
+    <Compile Include="tools\base.py" />
+    <Compile Include="tools\browser_tool.py" />
+    <Compile Include="tools\file_tools.py" />
+    <Compile Include="tools\filesystem_tool.py" />
+    <Compile Include="tools\playwright_tool.py" />
+    <Compile Include="tools\process_tool.py" />
+    <Compile Include="tools\registry.py" />
+    <Compile Include="tools\shell_tool.py" />
+    <Compile Include="tools\ssh_tool.py" />
+    <Compile Include="tools\web_tools.py" />
+    <!-- ui -->
+    <Compile Include="ui\__init__.py" />
+    <Compile Include="ui\app.py" />
+    <Compile Include="ui\panels\__init__.py" />
+    <Compile Include="ui\panels\chat_panel.py" />
+    <Compile Include="ui\panels\output_panel.py" />
+    <Compile Include="ui\panels\task_panel.py" />
+    <Compile Include="ui\widgets\__init__.py" />
+    <Compile Include="ui\widgets\message_bubble.py" />
+    <Compile Include="ui\widgets\task_item.py" />
+    <Compile Include="ui\widgets\tool_output_block.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="requirements.txt" />
+    <Content Include="README.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="core\" />
+    <Folder Include="memory\" />
+    <Folder Include="tools\" />
+    <Folder Include="ui\" />
+    <Folder Include="ui\panels\" />
+    <Folder Include="ui\widgets\" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="Global|PythonCore|3.13" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>
